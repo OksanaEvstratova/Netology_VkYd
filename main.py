@@ -17,13 +17,15 @@ class YandexAPIclient:
         new_folder_url = self.base_ya_url + 'v1/disk/resources'
         ya_params = {'path': folder_name}
         response = requests.put(new_folder_url, headers=self.headers, params=ya_params)
+        return response.status_code
 
+    def upload_photos(self, items_list, photos_quantity, folder_name):
 
-    def upload_photos(self, items_list, photos_quantity):
+        result = []
+        self.create_folder(folder_name)
 
         get_link = self.base_ya_url + 'v1/disk/resources/upload'
         likes_set = Counter([d['likes'] for d in items_list])
-        result = []
 
         for item in tqdm(items_list[0:photos_quantity], colour='blue', desc='Progress'):
             link = item['url']
@@ -73,28 +75,32 @@ with open('json_params.json', encoding='utf-8', mode='r') as f_json_params:
 vk_client = VKAPIclient(token, user_id)
 # получаем фото профиля
 data_photos = vk_client.get_profile_photos()
+try:
+    data_photos['error']['error_code']
+except:
+    # обработка результата с ВК
+    items_list = []
+    for f in data_photos['response']['items']:
+        x = datetime.datetime.date(datetime.datetime.fromtimestamp(int(f['date'])))
+        items_list.append({'date': str(x),
+                           'likes': f['likes']['count'],
+                           'size': f['sizes'][len(f['sizes']) - 1]['type'],
+                           'url': f['sizes'][len(f['sizes']) - 1]['url']})
 
-# обработка результата с ВК
-items_list = []
-for f in data_photos['response']['items']:
-    x =datetime.datetime.date(datetime.datetime.fromtimestamp(int(f['date'])))
-    items_list.append({'date': str(x),
-                       'likes': f['likes']['count'],
-                       'size': f['sizes'][len(f['sizes'])-1]['type'],
-                       'url': f['sizes'][len(f['sizes'])-1]['url']})
+    items_list = sorted(items_list, key=lambda x: x.get('size'), reverse=True)
 
-items_list = sorted(items_list, key=lambda x: x.get('size'), reverse=True)
+    # Yandex
+    folder_name = 'VKphotos'
+    ya_client = YandexAPIclient(ya_token)
+    photos_quantity = min(len(items_list), 5)
+    # создаем папку и загружаем файлы по ссылкам
+    result = ya_client.upload_photos(items_list, photos_quantity, folder_name)
 
-# Yandex
-folder_name = 'VKphotos'
-ya_client = YandexAPIclient(ya_token)
-# создаем папку
-ya_client.create_folder(folder_name)
-# загружаем файлы по ссылкам
-photos_quantity = min(len(items_list), 5)
-result = ya_client.upload_photos(items_list, photos_quantity)
+    # пишем результат загрузки в файл
+    with open('result.json', encoding='utf-8', mode='w') as f_json:
+        json.dump(result, f_json, ensure_ascii=False, indent=4)
 
-# пишем результат загрузки в файл
-with open('result.json', encoding='utf-8', mode='w') as f_json:
-    json.dump(result, f_json, ensure_ascii=False, indent=4)
+else:
+    print(f"Error: {data_photos['error']['error_msg']}")
+
 
